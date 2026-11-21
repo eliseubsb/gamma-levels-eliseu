@@ -350,20 +350,48 @@ sub_w = pd.merge(sub_w, vol_g, on='strike', how='left').fillna(0)
 sub_w['van_v'] = sub_w['van'] * (sub_w['vol_tot'] / np.maximum(sub_w['oi_tot'], 1))
 
 fig_w = make_subplots(rows=1, cols=3, shared_yaxes=True, subplot_titles=('DELTA FLOW (DEX) • OI + Vol', 'EXPOSICAO GAMA (GEX) • OI + Vol', 'VANNA (dΔ/dVol) • OI + Vol'))
-fig_w.add_trace(go.Bar(y=sub_w['y_lbl'], x=sub_w['dex']/1e6, orientation='h', marker_color=['rgba(0,230,118,0.28)' if x>=0 else 'rgba(255,87,34,0.28)' for x in sub_w['dex']], name='DEX OI'), 1, 1)
-fig_w.add_trace(go.Bar(y=sub_w['y_lbl'], x=sub_w['dex_v']/1e6, orientation='h', width=0.45, marker_color=['#00e676' if x>=0 else '#ff5722' for x in sub_w['dex_v']], name='DEX Fluxo Vol'), 1, 1)
-fig_w.add_trace(go.Bar(y=sub_w['y_lbl'], x=sub_w['gex']/1e6, orientation='h', marker_color=['rgba(156,39,176,0.32)' if x>=0 else 'rgba(255,87,34,0.32)' for x in sub_w['gex']], name='GEX OI'), 1, 2)
-fig_w.add_trace(go.Bar(y=sub_w['y_lbl'], x=sub_w['gex_v']/1e6, orientation='h', width=0.45, marker_color=['#ab47bc' if x>=0 else '#ff7043' for x in sub_w['gex_v']], name='GEX Fluxo Vol'), 1, 2)
-fig_w.add_trace(go.Bar(y=sub_w['y_lbl'], x=sub_w['van']/1e6, orientation='h', marker_color=['rgba(0,230,118,0.28)' if x>=0 else 'rgba(255,23,68,0.28)' for x in sub_w['van']], name='Vanna OI'), 1, 3)
-fig_w.add_trace(go.Bar(y=sub_w['y_lbl'], x=sub_w['van_v']/1e6, orientation='h', width=0.45, marker_color=['#00e676' if x>=0 else '#ff1744' for x in sub_w['van_v']], name='Vanna Fluxo Vol'), 1, 3)
-fig_w.update_layout(barmode='overlay', height=560, paper_bgcolor='#070d12', plot_bgcolor='#0b141c', font_color='#ffffff', showlegend=False, margin=dict(l=10,r=10,t=40,b=15))
+fmt_n = lambda a: [f'{x/1e6:+.1f}M' if abs(x)>=1e6 else (f'{x/1e3:+.0f}k' if abs(x)>=1e3 else '') for x in a]
+
+def add_dual_col(col_idx, oi_s, vol_s, c_oi_pos, c_oi_neg, c_v_pos, c_v_neg):
+    mx = max(oi_s.abs().max(), vol_s.abs().max(), 1e5)
+    oi_plot = []
+    t_vol_list, x_vol_txt, pos_vol_txt = [], [], []
+    for vo, vv in zip(oi_s, vol_s):
+        if abs(vo) > 0 and abs(vv) > 0 and (vo * vv > 0) and abs(vo) < abs(vv) * 1.45:
+            vo_vis = np.sign(vo) * max(abs(vo), abs(vv) + 0.32 * mx)
+        else:
+            vo_vis = vo
+        oi_plot.append(vo_vis / 1e6)
+        lbl_v = f'{vv/1e6:+.1f}M' if abs(vv)>=1e6 else (f'{vv/1e3:+.0f}k' if abs(vv)>=1e3 else '')
+        t_vol_list.append(lbl_v)
+        if lbl_v:
+            if (vo * vv > 0) and abs(vo_vis - vv) < 0.30 * mx:
+                x_vol_txt.append(-0.04 * (mx/1e6) if vv >= 0 else 0.04 * (mx/1e6))
+                pos_vol_txt.append('middle left' if vv >= 0 else 'middle right')
+            else:
+                x_vol_txt.append(vv / 1e6)
+                pos_vol_txt.append('middle right' if vv >= 0 else 'middle left')
+        else:
+            x_vol_txt.append(0)
+            pos_vol_txt.append('middle right')
+    fig_w.add_trace(go.Bar(y=sub_w['win_pts'], x=oi_plot, orientation='h', marker_color=[c_oi_pos if x>=0 else c_oi_neg for x in oi_s], text=fmt_n(oi_s), textposition='outside', cliponaxis=False, textfont=dict(color='#cfd8dc', size=10), customdata=oi_s/1e6, hovertemplate='%{y}<br>OI Real: %{customdata:+.2f}M<extra></extra>'), 1, col_idx)
+    fig_w.add_trace(go.Bar(y=sub_w['win_pts'], x=vol_s/1e6, orientation='h', width=0.45, marker_color=[c_v_pos if x>=0 else c_v_neg for x in vol_s], hovertemplate='%{y}<br>Fluxo Vol: %{x:+.2f}M<extra></extra>'), 1, col_idx)
+    fig_w.add_trace(go.Scatter(y=sub_w['win_pts'], x=x_vol_txt, text=t_vol_list, mode='text', textposition=pos_vol_txt, textfont=dict(color='#ffd600', size=10), cliponaxis=False, hoverinfo='skip'), 1, col_idx)
+    lim = (mx / 1e6) * 1.55
+    fig_w.update_xaxes(range=[-lim, lim], row=1, col=col_idx)
+
+add_dual_col(1, sub_w['dex'], sub_w['dex_v'], 'rgba(0,230,118,0.28)', 'rgba(255,87,34,0.28)', '#00e676', '#ff5722')
+add_dual_col(2, sub_w['gex'], sub_w['gex_v'], 'rgba(156,39,176,0.32)', 'rgba(255,87,34,0.32)', '#ab47bc', '#ff7043')
+add_dual_col(3, sub_w['van'], sub_w['van_v'], 'rgba(0,230,118,0.28)', 'rgba(255,23,68,0.28)', '#00e676', '#ff1744')
+fig_w.update_yaxes(tickmode='array', tickvals=sub_w['win_pts'], ticktext=sub_w['y_lbl'], row=1, col=1)
+fig_w.add_hline(y=win_spot, line_dash='dash', line_color='#00e5ff', line_width=2, annotation_text=f'  PRECO ATUAL WIN: {win_spot:,.0f} pts', annotation_position='top left', annotation_font=dict(color='#00e5ff', size=11))
+fig_w.update_layout(barmode='overlay', height=600, paper_bgcolor='#070d12', plot_bgcolor='#0b141c', font_color='#ffffff', showlegend=False, margin=dict(l=15,r=25,t=40,b=15))
 st.plotly_chart(fig_w, use_container_width=True)
 
 l1, l2, l3 = st.columns(3)
-l1.markdown('<div style="background:#0c161e;border:1px solid #00e676;border-radius:8px;padding:12px;font-size:12px;"><b style="color:#00e676;">▲ DELTA FLOW (DEX)</b><br>• <b>Barras Verdes (+):</b> Fluxo altista.<br>• <b>Barras Laranjas (-):</b> Fluxo baixista.<br>• <b>Camada solida:</b> Fluxo por volume.<br>• <b>Camada translucida:</b> OI estrutural.</div>', unsafe_allow_html=True)
-l2.markdown('<div style="background:#0c161e;border:1px solid #ab47bc;border-radius:8px;padding:12px;font-size:12px;"><b style="color:#ce93d8;">◆ EXPOSICAO GAMA (GEX)</b><br>• <b>Roxo (+):</b> Long Gamma (mercado estavel).<br>• <b>Laranja (-):</b> Short Gamma (volatilidade).<br>• <b>Cruzamento zero:</b> Gamma Flip.</div>', unsafe_allow_html=True)
-l3.markdown('<div style="background:#0c161e;border:1px solid #ffd600;border-radius:8px;padding:12px;font-size:12px;"><b style="color:#ffd600;">⚡ VANNA (dΔ/dIV)</b><br>• <b>Verde (+):</b> Se IV subir, MM compra delta.<br>• <b>Vermelho (-):</b> Se IV subir, MM vende delta.</div>', unsafe_allow_html=True)
-
+l1.markdown('<div style="background:#0c161e;border:1px solid #00e676;border-radius:8px;padding:12px;font-size:12px;line-height:1.45;"><b style="color:#00e676;">▲ DELTA FLOW (DEX) - AÇÃO DO MM</b><br>• <b>Barra Verde (+):</b><br>&nbsp;&nbsp;↗ <i>Preço Subindo:</i> <b>MM vende na alta</b> (Resistencia/Freio).<br>&nbsp;&nbsp;↘ <i>Preço Caindo:</i> <b>MM recompra hedge</b> (Alivia queda).<br>• <b>Barra Laranja (-):</b><br>&nbsp;&nbsp;↗ <i>Preço Subindo:</i> <b>MM encerra vendas</b> (Ajuda repique).<br>&nbsp;&nbsp;↘ <i>Preço Caindo:</i> <b>MM vende mais</b> (Empurra ate suporte).<br><span style="color:#90a4ae;font-size:11px;">Solida = Fluxo do dia | Translucida = OI acumulado</span></div>', unsafe_allow_html=True)
+l2.markdown('<div style="background:#0c161e;border:1px solid #ab47bc;border-radius:8px;padding:12px;font-size:12px;line-height:1.45;"><b style="color:#ce93d8;">◆ EXPOSICAO GAMA (GEX) - AÇÃO DO MM</b><br>• <b>Roxo (+ Long Gamma - Freio):</b><br>&nbsp;&nbsp;↗ <i>Preço Subindo:</i> <b>MM vende repiques</b> (Trava rali).<br>&nbsp;&nbsp;↘ <i>Preço Caindo:</i> <b>MM compra quedas</b> (Segura fundo).<br>• <b>Laranja (- Short Gamma - Acelerador):</b><br>&nbsp;&nbsp;↗ <i>Preço Subindo:</i> <b>MM compra na alta</b> (Acelera rompimento).<br>&nbsp;&nbsp;↘ <i>Preço Caindo:</i> <b>MM vende na queda</b> (Acelera queda).<br><span style="color:#90a4ae;font-size:11px;">Gamma Flip (Zero) = Virada de freio para acelerador</span></div>', unsafe_allow_html=True)
+l3.markdown('<div style="background:#0c161e;border:1px solid #ffd600;border-radius:8px;padding:12px;font-size:12px;line-height:1.45;"><b style="color:#ffd600;">⚡ VANNA (dΔ/dIV) - AÇÃO DO MM</b><br>• <b>Verde (+ Vanna Positiva):</b><br>&nbsp;&nbsp;↗ <i>Preço Subindo (IV cai):</i> <b>MM compra o ativo</b> (Sustenta alta).<br>&nbsp;&nbsp;↘ <i>Preço Caindo (IV sobe):</i> <b>MM vende o ativo</b> (Agrava queda).<br>• <b>Vermelho (- Vanna Negativa):</b><br>&nbsp;&nbsp;↗ <i>Preço Subindo (IV cai):</i> <b>MM vende o ativo</b> (Segura alta).<br>&nbsp;&nbsp;↘ <i>Preço Caindo (IV sobe):</i> <b>MM compra o ativo</b> (Estanca queda).<br><span style="color:#90a4ae;font-size:11px;">Crítico em aberturas, noticias e decisoes de juros</span></div>', unsafe_allow_html=True)
 st.markdown('---')
 with st.expander('⚡ GERADOR DE INDICADOR TRADINGVIEW (EWZ • BRA50 • WIN)', expanded=False):
     if st.button('🚀 Gerar Codigo Universal (EWZ / BRA50 / WIN)', use_container_width=True):

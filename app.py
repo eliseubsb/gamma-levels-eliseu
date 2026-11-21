@@ -22,6 +22,7 @@ def greeks_bs(S, K, T, r, sig, call=True):
 @st.cache_data(ttl=30)
 def load_chain(sym):
     sess = cffi_requests.Session(impersonate='chrome124')
+    sess.headers.update({'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36', 'Accept': 'application/json, text/plain, */*', 'Referer': 'https://cboe.com'})
     fonte = 'Yahoo Finance (Backup)'
     spot, df_final = None, pd.DataFrame()
     try:
@@ -99,6 +100,7 @@ def load_chain(sym):
 def load_barchart(sym):
     try:
         sess = cffi_requests.Session(impersonate='chrome124')
+        sess.headers.update({'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36', 'Accept': 'application/json, text/plain, */*', 'Referer': 'https://cboe.com'})
         url = f'https://barchart.com{sym}/options'
         sess.get(url, timeout=8)
         xsrf = sess.cookies.get('XSRF-TOKEN')
@@ -324,66 +326,6 @@ for w_s in [20, 60, 120]:
 fig_cta.update_layout(height=360, paper_bgcolor='#0c161e', plot_bgcolor='#070d12', font_color='#ffffff', legend=dict(font=dict(color='#ffffff')), margin=dict(l=10,r=10,t=25,b=15))
 st.plotly_chart(fig_cta, use_container_width=True)
 
-
-st.markdown('---')
-st.markdown('### 🇧🇷 PAINEL WIN AGREGADO - CONVERSAO EWZ -> MINI-INDICE (B3)')
-c_w1, c_w2, c_w3 = st.columns([1.2, 1.2, 1.6])
-bvsp_px = 167605.0
-fonte_win = 'Estimativa WINFUT (IBOV + Premio DI)'
-for app_dde in ['profitchart', 'profitpro', 'profitplus', 'profitone', 'profittrader', 'profit']:
-    for item_dde in ['WINFUT_F_0.ULT', 'WINZ26_F_0.ULT', 'WINFUT.ULT']:
-        try:
-            import win32ui, dde
-            srv = dde.CreateServer()
-            srv.Create('PyWin_' + app_dde)
-            conv = dde.CreateConversation(srv)
-            conv.ConnectTo(app_dde, 'cot')
-            raw_v = conv.Request(item_dde).strip().replace('.', '').replace(',', '.')
-            if raw_v and float(raw_v) > 50000:
-                bvsp_px = float(raw_v)
-                fonte_win = f'Profit DDE Ao Vivo ({app_dde})'
-                break
-        except Exception:
-            pass
-    if 'Profit' in fonte_win: break
-if 'Estimativa' in fonte_win:
-    try:
-        ibov_now = float(yf.Ticker('^BVSP').history(period='1d')['Close'].iloc[-1])
-        bvsp_px = round((ibov_now * (167605.0 / 166376.43)) / 5) * 5
-    except Exception:
-        pass
-win_spot = c_w1.number_input('Cotacao Atual WIN (Pts)', value=float(round(bvsp_px, -1)), step=50.0)
-fator_win = win_spot / spot
-c_w2.markdown(card_html('SPOT WIN EQUIVALENTE', f'{win_spot:,.0f} pts', f'{fonte_win} - Fator: {fator_win:,.1f}', '#00e676' if 'Profit' in fonte_win else '#80d8ff'), unsafe_allow_html=True)
-c_w3.info(f'Gamma Flip WIN: {gf * fator_win:,.0f} pts | Call Wall WIN: {cw.strike * fator_win:,.0f} pts | Put Wall WIN: {pw.strike * fator_win:,.0f} pts')
-
-sub_w = grp[(grp['strike']>=spot*0.88) & (grp['strike']<=spot*1.12)].copy()
-sub_w['win_pts'] = (sub_w['strike'] * fator_win / 5).round() * 5
-sub_w['y_lbl'] = sub_w.apply(lambda r: f"{int(r['win_pts']):,}  (${r['strike']:.2f})", axis=1)
-
-vol_g = df_sub.groupby('strike').agg(gex_v=('gex_vol','sum'), dex_v=('dex_vol','sum'), oi_tot=('openInterest','sum'), vol_tot=('volume','sum')).reset_index()
-sub_w = pd.merge(sub_w, vol_g, on='strike', how='left').fillna(0)
-sub_w['van_v'] = sub_w['van'] * (sub_w['vol_tot'] / np.maximum(sub_w['oi_tot'], 1))
-
-fig_w = make_subplots(rows=1, cols=3, shared_yaxes=True, subplot_titles=('DELTA FLOW (DEX) • OI + Vol', 'EXPOSICAO GAMA (GEX) • OI + Vol', 'VANNA (dΔ/dVol) • OI + Vol'))
-
-fig_w.add_trace(go.Bar(y=sub_w['y_lbl'], x=sub_w['dex']/1e6, orientation='h', marker_color=['rgba(0,230,118,0.28)' if x>=0 else 'rgba(255,87,34,0.28)' for x in sub_w['dex']], name='DEX OI'), 1, 1)
-fig_w.add_trace(go.Bar(y=sub_w['y_lbl'], x=sub_w['dex_v']/1e6, orientation='h', width=0.45, marker_color=['#00e676' if x>=0 else '#ff5722' for x in sub_w['dex_v']], name='DEX Fluxo Vol'), 1, 1)
-
-fig_w.add_trace(go.Bar(y=sub_w['y_lbl'], x=sub_w['gex']/1e6, orientation='h', marker_color=['rgba(156,39,176,0.32)' if x>=0 else 'rgba(255,87,34,0.32)' for x in sub_w['gex']], name='GEX OI'), 1, 2)
-fig_w.add_trace(go.Bar(y=sub_w['y_lbl'], x=sub_w['gex_v']/1e6, orientation='h', width=0.45, marker_color=['#ab47bc' if x>=0 else '#ff7043' for x in sub_w['gex_v']], name='GEX Fluxo Vol'), 1, 2)
-
-fig_w.add_trace(go.Bar(y=sub_w['y_lbl'], x=sub_w['van']/1e6, orientation='h', marker_color=['rgba(0,230,118,0.28)' if x>=0 else 'rgba(255,23,68,0.28)' for x in sub_w['van']], name='Vanna OI'), 1, 3)
-fig_w.add_trace(go.Bar(y=sub_w['y_lbl'], x=sub_w['van_v']/1e6, orientation='h', width=0.45, marker_color=['#00e676' if x>=0 else '#ff1744' for x in sub_w['van_v']], name='Vanna Fluxo Vol'), 1, 3)
-
-fig_w.update_layout(barmode='overlay', height=560, paper_bgcolor='#070d12', plot_bgcolor='#0b141c', font_color='#ffffff', showlegend=False, margin=dict(l=10,r=10,t=40,b=15))
-st.plotly_chart(fig_w, use_container_width=True)
-
-l1, l2, l3 = st.columns(3)
-l1.markdown('<div style="background:#0c161e;border:1px solid #00e676;border-radius:8px;padding:12px;font-size:12px;"><b style="color:#00e676;">▲ DELTA FLOW (DEX)</b><br>• <b>Barras Verdes (+):</b> Fluxo altista (predominio comprador).<br>• <b>Barras Laranjas (-):</b> Fluxo baixista (predominio vendedor).<br>• <b>Camada solida:</b> Fluxo por volume do pregao atual.<br>• <b>Camada translucida:</b> OI estrutural acumulado.</div>', unsafe_allow_html=True)
-l2.markdown('<div style="background:#0c161e;border:1px solid #ab47bc;border-radius:8px;padding:12px;font-size:12px;"><b style="color:#ce93d8;">◆ EXPOSICAO GAMA (GEX)</b><br>• <b>Roxo (+):</b> Long Gamma - MM vende forca e compra fraqueza (mercado estavel).<br>• <b>Laranja (-):</b> Short Gamma - MM compra forca e vende fraqueza (volatilidade explosiva).<br>• <b>Cruzamento zero:</b> Gamma Flip (muda de regime).</div>', unsafe_allow_html=True)
-l3.markdown('<div style="background:#0c161e;border:1px solid #ffd600;border-radius:8px;padding:12px;font-size:12px;"><b style="color:#ffd600;">⚡ VANNA (dΔ/dIV)</b><br>• <b>Verde (+):</b> Se IV subir, MM compra delta (preco sobe).<br>• <b>Vermelho (-):</b> Se IV subir, MM vende delta (preco cai).<br>• <b>Critico:</b> Eventos de IV (Fed, Payroll, COPOM).</div>', unsafe_allow_html=True)
-st.markdown('---')
 
 st.markdown('---')
 st.markdown('### 🇧🇷 PAINEL WIN AGREGADO - CONVERSAO EWZ -> MINI-INDICE (B3)')

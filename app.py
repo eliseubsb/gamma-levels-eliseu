@@ -206,7 +206,7 @@ fig_vo.add_trace(go.Bar(x=p_vo['strike'], y=p_vo['ratio'], name='PUT Vol/OI', ma
 fig_vo.add_hline(y=2.5, line_dash='dot', line_color='#ffd600', annotation_text='ELEVADO (2.5x)', annotation_font_color='#ffd600')
 fig_vo.add_hline(y=7.8, line_dash='dot', line_color='#ff5252', annotation_text='ALERTA MAX (7.8x)', annotation_font_color='#ff5252')
 fig_vo.update_layout(height=280, barmode='group', paper_bgcolor='#0c161e', plot_bgcolor='#070d12', font_color='#ffffff', legend=dict(font=dict(color='#ffffff')), margin=dict(l=10,r=10,t=25,b=15))
-st.plotly_chart(fig_vo, use_container_width=True)
+st.plotly_chart(fig_vo, width='stretch')
 
 st.markdown('#### 📅 ESTRUTURA DE VENCIMENTOS (CURTO PRAZO • SEMANAIS • MENSAIS)')
 def is_monthly_opex(exp_yymmdd):
@@ -225,7 +225,7 @@ def plot_oi_bucket(col_obj, sub_df, titulo_box):
         fg.add_trace(go.Bar(x=p_e['strike'], y=p_e['openInterest'], name='PUT OI (Suporte)', marker_color='#00e676', hovertemplate='<b>PUT OI (Suporte)</b><br>Strike: $%{x:.2f}<br>Contratos: %{y:,.0f}<br>Acao MM: Suporte / Compra na Queda<extra></extra>'))
         fg.add_vline(x=spot, line_dash='dot', line_color='#80d8ff', annotation_text=f'SPOT {spot:.2f}', annotation_font_color='#ffffff')
         fg.update_layout(title=dict(text=titulo_box, font=dict(color='#ffffff', size=13)), legend=dict(font=dict(color='#ffffff')), height=250, barmode='group', paper_bgcolor='#0c161e', plot_bgcolor='#070d12', font=dict(color='#ffffff'), margin=dict(l=10,r=10,t=40,b=15))
-        st.plotly_chart(fg, use_container_width=True)
+        st.plotly_chart(fg, width='stretch')
 
 exps_disp = sorted(df_all['exp'].unique())
 exp_1, exp_2 = exps_disp[:1], exps_disp[1:2]
@@ -324,7 +324,7 @@ for w_s in [20, 60, 120]:
         fig_cta.add_hline(y=lvl, line_dash='dash', line_color='#ff1744', annotation_text=f'Sell Stop w{w_s}: ${lvl:.2f} ({(lvl/spot-1)*100:+.1f}%)', annotation_font_color='#ff5252')
 
 fig_cta.update_layout(height=360, paper_bgcolor='#0c161e', plot_bgcolor='#070d12', font_color='#ffffff', legend=dict(font=dict(color='#ffffff')), margin=dict(l=10,r=10,t=25,b=15))
-st.plotly_chart(fig_cta, use_container_width=True)
+st.plotly_chart(fig_cta, width='stretch')
 
 
 st.markdown('---')
@@ -386,50 +386,13 @@ add_dual_col(3, sub_w['van'], sub_w['van_v'], 'rgba(0,230,118,0.28)', 'rgba(255,
 fig_w.update_yaxes(tickmode='array', tickvals=sub_w['win_pts'], ticktext=sub_w['y_lbl'], row=1, col=1)
 fig_w.add_hline(y=win_spot, line_dash='dash', line_color='#00e5ff', line_width=2, annotation_text=f'  PRECO ATUAL WIN: {win_spot:,.0f} pts', annotation_position='top left', annotation_font=dict(color='#00e5ff', size=11))
 fig_w.update_layout(barmode='overlay', height=600, paper_bgcolor='#070d12', plot_bgcolor='#0b141c', font_color='#ffffff', showlegend=False, margin=dict(l=15,r=25,t=40,b=15))
-st.plotly_chart(fig_w, use_container_width=True)
+st.plotly_chart(fig_w, width='stretch')
 
 l1, l2, l3 = st.columns(3)
 l1.markdown('<div style="background:#0c161e;border:1px solid #00e676;border-radius:8px;padding:12px;font-size:12px;line-height:1.45;"><b style="color:#00e676;">▲ DELTA FLOW (DEX) - AÇÃO DO MM</b><br>• <b>Barra Verde (+):</b><br>&nbsp;&nbsp;↗ <i>Preço Subindo:</i> <b>MM vende na alta</b> (Resistencia/Freio).<br>&nbsp;&nbsp;↘ <i>Preço Caindo:</i> <b>MM recompra hedge</b> (Alivia queda).<br>• <b>Barra Laranja (-):</b><br>&nbsp;&nbsp;↗ <i>Preço Subindo:</i> <b>MM encerra vendas</b> (Ajuda repique).<br>&nbsp;&nbsp;↘ <i>Preço Caindo:</i> <b>MM vende mais</b> (Empurra ate suporte).<br><span style="color:#90a4ae;font-size:11px;">Solida = Fluxo do dia | Translucida = OI acumulado</span></div>', unsafe_allow_html=True)
 l2.markdown('<div style="background:#0c161e;border:1px solid #ab47bc;border-radius:8px;padding:12px;font-size:12px;line-height:1.45;"><b style="color:#ce93d8;">◆ EXPOSICAO GAMA (GEX) - AÇÃO DO MM</b><br>• <b>Roxo (+ Long Gamma - Freio):</b><br>&nbsp;&nbsp;↗ <i>Preço Subindo:</i> <b>MM vende repiques</b> (Trava rali).<br>&nbsp;&nbsp;↘ <i>Preço Caindo:</i> <b>MM compra quedas</b> (Segura fundo).<br>• <b>Laranja (- Short Gamma - Acelerador):</b><br>&nbsp;&nbsp;↗ <i>Preço Subindo:</i> <b>MM compra na alta</b> (Acelera rompimento).<br>&nbsp;&nbsp;↘ <i>Preço Caindo:</i> <b>MM vende na queda</b> (Acelera queda).<br><span style="color:#90a4ae;font-size:11px;">Gamma Flip (Zero) = Virada de freio para acelerador</span></div>', unsafe_allow_html=True)
 l3.markdown('<div style="background:#0c161e;border:1px solid #ffd600;border-radius:8px;padding:12px;font-size:12px;line-height:1.45;"><b style="color:#ffd600;">⚡ VANNA (dΔ/dIV) - AÇÃO DO MM</b><br>• <b>Verde (+ Vanna Positiva):</b><br>&nbsp;&nbsp;↗ <i>Preço Subindo (IV cai):</i> <b>MM compra o ativo</b> (Sustenta alta).<br>&nbsp;&nbsp;↘ <i>Preço Caindo (IV sobe):</i> <b>MM vende o ativo</b> (Agrava queda).<br>• <b>Vermelho (- Vanna Negativa):</b><br>&nbsp;&nbsp;↗ <i>Preço Subindo (IV cai):</i> <b>MM vende o ativo</b> (Segura alta).<br>&nbsp;&nbsp;↘ <i>Preço Caindo (IV sobe):</i> <b>MM compra o ativo</b> (Estanca queda).<br><span style="color:#90a4ae;font-size:11px;">Crítico em aberturas, noticias e decisoes de juros</span></div>', unsafe_allow_html=True)
 st.markdown('---')
-with st.expander('⚡ GERADOR DE INDICADOR TRADINGVIEW (EWZ • BRA50 • WIN)', expanded=False):
-    if st.button('🚀 Gerar Codigo Universal (EWZ / BRA50 / WIN)', use_container_width=True):
-        ks_u = sorted(df_sub['strike'].unique())
-        fmt_u = lambda l: 'array.from(' + ','.join([str(round(x,2)) for x in l]) + ')' if l else 'array.new_float(0)'
-        goi_u = [df_sub[df_sub['strike']==k]['gex_oi'].sum() for k in ks_u]
-        doi_u = [df_sub[df_sub['strike']==k]['dex_oi'].sum() for k in ks_u]
-        L = [
-            '//@version=6',
-            'indicator("GAMMA-LEVELS UNIVERSAL", overlay=true, max_lines_count=500, max_labels_count=500, max_boxes_count=1000)',
-            'var line[] ls = array.new_line()',
-            'var label[] lbs = array.new_label()',
-            'var box[] bxs = array.new_box()',
-            'tk = str.upper(syminfo.ticker)',
-            'is_ewz = str.contains(tk, "EWZ")',
-            'is_idx = str.contains(tk, "BRA50") or str.contains(tk, "WIN") or close > 1000',
-            f'spot_ref = {round(spot,2)}',
-            'fator = is_idx ? (close / spot_ref) : 1.0',
-            'conv(v) => is_idx ? math.round((v * fator) / 5) * 5 : v',
-            'dy = is_idx ? (close * 0.0025) : 0.12',
-            'add_l(t, vu, c, st) =>',
-            '    yv = conv(vu)',
-            '    t0 = timestamp("America/Sao_Paulo", year(time,"America/Sao_Paulo"), month(time,"America/Sao_Paulo"), dayofmonth(time,"America/Sao_Paulo"), is_ewz?10:9, is_ewz?30:0)',
-            '    t1 = time >= t0 ? t0 : t0 - 86400000',
-            '    array.push(ls, line.new(t1, yv, time, yv, color=c, width=2, style=st, xloc=xloc.bar_time))',
-            '    array.push(lbs, label.new(time, yv, t + " (" + str.tostring(yv, is_idx?"#":"#.##") + ")", style=label.style_label_left, color=color.new(c,100), textcolor=c, size=size.small, xloc=xloc.bar_time))',
-            f'ks={fmt_u(ks_u)}', f'goi={fmt_u(goi_u)}', f'doi={fmt_u(doi_u)}',
-            'if barstate.islast and (is_ewz or is_idx)',
-            '    for x in ls\n        line.delete(x)\n    array.clear(ls)',
-            '    for x in lbs\n        label.delete(x)\n    array.clear(lbs)',
-            '    for x in bxs\n        box.delete(x)\n    array.clear(bxs)',
-            f'    add_l("Call Wall", {float(cw.strike)}, color.rgb(255,23,68), line.style_solid)',
-            f'    add_l("Vanna+", {float(vn.strike)}, color.rgb(0,230,118), line.style_dashed)',
-            f'    add_l("DELTA FLIP", {dfp}, color.rgb(186,104,200), line.style_dashed)',
-            f'    add_l("GAMMA FLIP", {gf}, color.rgb(156,39,176), line.style_solid)',
-            f'    add_l("Put Wall", {float(pw.strike)}, color.rgb(41,182,246), line.style_solid)',
-            '    mgoi=1.0\n    mdoi=1.0',
-            '    for i=0 to array.size(ks)-1\n        mgoi:=math.max(mgoi,math.abs(array.get(goi,i)))\n        mdoi:=math.max(mdoi,math.abs(array.get(doi,i)))',
-            '    for i=0 to array.size(ks)-1\n        yk=conv(array.get(ks,i))\n        gv=array.get(goi,i)\n        wg=math.max(3,math.round(math.abs(gv)/mgoi*45))\n        if math.abs(gv)>0\n            c1=gv>=0?color.rgb(156,39,176):color.rgb(255,87,34)\n            array.push(bxs,box.new(bar_index+15-wg,yk+dy,bar_index+15,yk-dy,border_color=c1,bgcolor=color.new(c1,55)))\n        dv=array.get(doi,i)\n        wd=math.max(3,math.round(math.abs(dv)/mdoi*45))\n        if math.abs(dv)>0\n            c2=dv>=0?color.rgb(0,230,118):color.rgb(255,23,68)\n            array.push(bxs,box.new(dv>=0?bar_index+75:bar_index+75-wd,yk+dy,dv>=0?bar_index+75+wd:bar_index+75,yk-dy,border_color=c2,bgcolor=color.new(c2,55)))'
-        ]
-        st.code('\n'.join(L), language='pinescript')
+
+from geradores import render_geradores
+render_geradores(spot, win_spot, df_sub, cw, pw, vn, dfp, gf)

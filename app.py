@@ -1,3 +1,58 @@
+def _fmt_strike_win(k, sp_ewz):
+    _ws = globals().get('win_spot')
+    if not _ws:
+        try:
+            import yfinance as _yf
+            _ws = float(_yf.Ticker('^BVSP').history(period='5d')['Close'].dropna().iloc[-1])
+        except Exception:
+            _ws = sp_ewz * 5050.0
+    pts = int(round((_ws * (float(k) / float(sp_ewz))) / 5.0) * 5) if sp_ewz > 0 else 0
+    return f'$ {float(k):.2f}  ({pts:,} pts)'.replace(',', '.')
+
+ROTULOS_MENU = {
+    'EWZ': 'EWZ',
+    'PBR': 'Petrobras',
+    'PBR.A': 'PBR.A (Petrobras PN)',
+    'VALE': 'VALE',
+    'NU': 'Nu Holdings (NU)',
+    'ITUB': 'Itaú (ITUB)',
+    'EBR': 'Eletrobras (EBR)'
+}
+def _ajustar_grafico_venc(fig, sp_ewz, sp_win=None):
+    fig.update_layout(legend=dict(orientation='h', yanchor='bottom', y=1.01, xanchor='left', x=0, bgcolor='rgba(0,0,0,0)'), margin=dict(t=62, b=52, l=35, r=15))
+    if not sp_win:
+        sp_win = globals().get('win_spot')
+    if not sp_win:
+        try:
+            import yfinance as _yf
+            sp_win = float(_yf.Ticker('^BVSP').history(period='5d')['Close'].dropna().iloc[-1])
+        except Exception:
+            sp_win = sp_ewz * 5050.0
+    xs = []
+    for tr in fig.data:
+        if getattr(tr, 'x', None) is not None:
+            xs.extend([float(v) for v in tr.x if v is not None])
+    tv = sorted(set(xs))
+    if tv and sp_ewz > 0 and sp_win > 0:
+        tt = [f'<b>{k:g}</b><br><span style="color:#00e5ff;font-size:10px">{int(round((k*(sp_win/sp_ewz))/5.0)*5):,}</span>'.replace(',', '.') for k in tv]
+        fig.update_xaxes(tickmode='array', tickvals=tv, ticktext=tt, tickangle=0)
+    return fig
+
+from datetime import datetime as _dt
+def _filtrar_6_semanas(lista_v):
+    hoje = _dt.now().date()
+    sel = []
+    for v in lista_v:
+        try:
+            vs = str(v)[:8]
+            fmt = '%y-%m-%d' if len(vs)==8 and vs[2]=='-' else '%Y-%m-%d'
+            d = (_dt.strptime(str(v)[:10], fmt).date() - hoje).days
+            if 0 <= d <= 42:
+                sel.append(v)
+        except Exception:
+            pass
+    return sel if sel else lista_v[:3]
+
 import datetime, re, urllib.parse, numpy as np, pandas as pd, plotly.graph_objects as go, streamlit as st, yfinance as yf
 from curl_cffi import requests as cffi_requests
 from plotly.subplots import make_subplots
@@ -9,7 +64,7 @@ st.markdown('<style>.stApp{background-color:#070d12;color:#ffffff;} label, label
 
 c1, c2 = st.columns([3, 1])
 c1.markdown('### ⚡ HEDGE MAP & GAMMA TERMINAL (CBOE + BARCHART)')
-ticker = c2.selectbox('Ativo', ['EWZ', 'SPY', 'QQQ', 'IWM', 'PBR', 'VALE'], label_visibility='collapsed')
+ticker = c2.selectbox('Ativo', ['EWZ', 'PBR', 'PBR.A', 'VALE', 'NU', 'ITUB', 'EBR'], label_visibility='collapsed')
 
 def greeks_bs(S, K, T, r, sig, call=True):
     T, sig = np.maximum(T, 1e-5), np.maximum(sig, 1e-4)
@@ -57,7 +112,7 @@ def load_chain(sym):
         pass
     if df_final.empty:
         try:
-            tk = yf.Ticker(sym)
+            tk = yf.Ticker(sym.replace(".", "-"))
             hist_s = tk.history(period='5d')['Close'].dropna()
             spot = float(hist_s.iloc[-1]) if not hist_s.empty else 28.54
             now, rows = datetime.datetime.now(), []
@@ -118,7 +173,7 @@ all_exps = sorted(df_all['exp'].unique())
 c_f1, c_f2 = st.columns([1.2, 2.0])
 hor_opt = c_f1.selectbox('Horizonte de Vencimentos', ['8 Semanais (~2 Meses)', 'Todos ate 3+ Meses (Padrao)', 'Toda a Cadeia Disponivel'], index=1)
 def_exps = all_exps[:8] if '8 Semanais' in hor_opt else (all_exps[:14] if '3+ Meses' in hor_opt else all_exps)
-sel_exps = c_f2.multiselect('Vencimentos Ativos no Calculo (YY-MM-DD)', options=all_exps, default=def_exps)
+sel_exps = c_f2.multiselect('Vencimentos Ativos no Calculo (YY-MM-DD)', options=all_exps, default=_filtrar_6_semanas(def_exps))
 df = df_all[df_all['exp'].isin(sel_exps)].copy() if sel_exps else df_all.copy()
 
 df_sub = df[(df['strike']>=spot*0.88) & (df['strike']<=spot*1.12)].copy()
@@ -153,34 +208,13 @@ m2.markdown(card_html('FLUXO (DELTA)', 'ALTISTA (Compra)' if net_dex>=0 else 'BA
 m3.markdown(card_html(f'SPOT {ticker}', f'${spot:.2f}', f'Gamma Flip: ${gf:.2f} | Max Pain: ${max_pain:.2f}', '#80d8ff'), unsafe_allow_html=True)
 
 c_tv1, c_tv2, c_tv3 = st.columns([3, 1, 1])
-c_tv1.markdown('#### 📈 GRAFICO AO VIVO COM NIVEIS (TEMPO REAL)')
-tf_sel = c_tv2.selectbox('Timeframe', ['1m', '5m', '15m', '1h'], index=1, label_visibility='collapsed')
-live_on = c_tv3.toggle('Auto-Atualizar (5m)', value=True)
-
-@st.fragment(run_every=300 if live_on else None)
-def live_chart_box():
-    per = '1d' if tf_sel in ['1m', '5m'] else '5d'
-    intraday = yf.Ticker(ticker).history(period=per, interval=tf_sel).reset_index()
-    if intraday.empty:
-        st.warning('Aguardando dados do pregao...')
-        return
-    time_col = 'Datetime' if 'Datetime' in intraday.columns else 'Date'
-    candles = [{'time': int(pd.Timestamp(r[time_col]).timestamp()), 'open': float(r['Open']), 'high': float(r['High']), 'low': float(r['Low']), 'close': float(r['Close'])} for _, r in intraday.iterrows()]
-    last_px = candles[-1]['close']
-    lvls_chart = [
-        {'price': float(cw.strike), 'color': '#ff1744', 'lineWidth': 2, 'lineStyle': 0, 'axisLabelVisible': True, 'title': f'Call Wall ({cw.strike:.2f})'},
-        {'price': float(max_pain), 'color': '#ffd600', 'lineWidth': 1, 'lineStyle': 2, 'axisLabelVisible': True, 'title': f'Max Pain ({max_pain:.2f})'},
-        {'price': float(dfp), 'color': '#ba68c8', 'lineWidth': 1, 'lineStyle': 2, 'axisLabelVisible': True, 'title': f'Delta Flip ({dfp:.2f})'},
-        {'price': float(gf), 'color': '#9c27b0', 'lineWidth': 2, 'lineStyle': 0, 'axisLabelVisible': True, 'title': f'Gamma Flip ({gf:.2f})'},
-        {'price': float(pw.strike), 'color': '#29b6f6', 'lineWidth': 2, 'lineStyle': 0, 'axisLabelVisible': True, 'title': f'Put Wall ({pw.strike:.2f})'}
-    ]
-    chartOptions = {'height': 420, 'layout': {'background': {'type': 'solid', 'color': '#070d12'}, 'textColor': '#ffffff'}, 'grid': {'vertLines': {'color': '#132533'}, 'horzLines': {'color': '#132533'}}, 'timeScale': {'timeVisible': True, 'secondsVisible': False}}
-    seriesCandlestick = [{'type': 'Candlestick', 'data': candles, 'options': {'upColor': '#00e676', 'downColor': '#ff1744', 'borderVisible': False, 'wickUpColor': '#00e676', 'wickDownColor': '#ff1744'}, 'priceLines': lvls_chart}]
-    st.caption(f'Ultima atualizacao: {datetime.datetime.now().strftime("%H:%M:%S")} | Ultimo Preco: ${last_px:.2f} | Fonte: {fonte_dados}')
-    renderLightweightCharts([{'chart': chartOptions, 'series': seriesCandlestick}], key=f'tv_{ticker}_{tf_sel}_{int(datetime.datetime.now().timestamp())}')
-
-live_chart_box()
-
+try:
+    import yfinance as _yf_w
+    _ws_live = float(_yf_w.Ticker('^BVSP').history(period='5d')['Close'].dropna().iloc[-1])
+except Exception:
+    _ws_live = spot * 5050.0
+from graficos_ao_vivo import render_graficos_tempo_real
+render_graficos_tempo_real(ticker, spot, _ws_live, df_sub, cw, pw, vn, dfp, gf)
 st.markdown('#### 🎯 ZONAS DE IMPACTO DELTA (SUPORTE & RESISTENCIA)')
 c_z = df_sub[df_sub['is_c']].groupby('strike').agg(dex=('dex_oi','sum'), oi=('openInterest','sum')).reset_index()
 p_z = df_sub[~df_sub['is_c']].groupby('strike').agg(dex=('dex_oi','sum'), oi=('openInterest','sum')).reset_index()
@@ -225,7 +259,7 @@ def plot_oi_bucket(col_obj, sub_df, titulo_box):
         fg.add_trace(go.Bar(x=p_e['strike'], y=p_e['openInterest'], name='PUT OI (Suporte)', marker_color='#00e676', hovertemplate='<b>PUT OI (Suporte)</b><br>Strike: $%{x:.2f}<br>Contratos: %{y:,.0f}<br>Acao MM: Suporte / Compra na Queda<extra></extra>'))
         fg.add_vline(x=spot, line_dash='dot', line_color='#80d8ff', annotation_text=f'SPOT {spot:.2f}', annotation_font_color='#ffffff')
         fg.update_layout(title=dict(text=titulo_box, font=dict(color='#ffffff', size=13)), legend=dict(font=dict(color='#ffffff')), height=250, barmode='group', paper_bgcolor='#0c161e', plot_bgcolor='#070d12', font=dict(color='#ffffff'), margin=dict(l=10,r=10,t=40,b=15))
-        st.plotly_chart(fg, width='stretch')
+        st.plotly_chart(_ajustar_grafico_venc(fg, spot), width='stretch')
 
 exps_disp = sorted(df_all['exp'].unique())
 exp_1, exp_2 = exps_disp[:1], exps_disp[1:2]
@@ -254,7 +288,7 @@ with m_col1:
     all_k_mat = sorted(df_mat['strike'].unique(), reverse=True)
     rows_oi = []
     for k in all_k_mat:
-        row_dict = {'Strike': f'${k:.2f}'}
+        row_dict = {'Strike': _fmt_strike_win(k, spot)}
         for e in exps_mat:
             vc_val = piv_c.loc[k, e] if (k in piv_c.index and e in piv_c.columns) else 0
             vp_val = piv_p.loc[k, e] if (k in piv_p.index and e in piv_p.columns) else 0
@@ -273,7 +307,7 @@ with m_col2:
     piv_g = df_mat.pivot_table(index='strike', columns='exp', values='gex_oi', aggfunc='sum', fill_value=0)
     rows_gex = []
     for k in all_k_mat:
-        row_dict = {'Strike': f'${k:.2f}'}
+        row_dict = {'Strike': _fmt_strike_win(k, spot)}
         for e in exps_mat:
             gv = piv_g.loc[k, e] if (k in piv_g.index and e in piv_g.columns) else 0
             if abs(gv) < 100:
@@ -287,18 +321,18 @@ with m_col2:
     st.markdown(df_gex_html.to_html(index=False, classes='tbl-gama'), unsafe_allow_html=True)
 
 st.markdown('#### 🤖 REGIME CTA & PROJECAO DE GATILHOS (BUY / SELL STOPS)')
-hist_cta = yf.Ticker(ticker).history(period='1y')['Close'].dropna()
+hist_cta = yf.Ticker(ticker.replace(".", "-")).history(period='1y')['Close'].dropna()
 rets = np.log(hist_cta / hist_cta.shift(1)).dropna()
 vol_real = float(rets.tail(21).std() * np.sqrt(252) * 100)
 wins = [5, 10, 15, 20, 30, 40, 50, 60, 90, 120, 150, 200]
-long_cnt = sum([1 for w in wins if spot > float(hist_cta.rolling(w).mean().iloc[-1])])
+long_cnt = sum([1 for w in wins if spot > float((hist_cta.rolling(w).mean().iloc[-1] if len(hist_cta) > 0 else spot))])
 pos_score = round((long_cnt / len(wins)) * 2 - 1, 2)
 
 ct1, ct2, ct3, ct4 = st.columns(4)
 ct1.markdown(card_html('REGIME CTA', 'LONG' if pos_score >= 0 else 'SHORT', f'{long_cnt}/12 janelas long', '#00e676' if pos_score >= 0 else '#ff5252'), unsafe_allow_html=True)
 ct2.markdown(card_html('POSITIONING', f'{pos_score:+.2f}', 'Escala -1.0 a +1.0', '#80d8ff'), unsafe_allow_html=True)
 ct3.markdown(card_html('VOL REALIZADA', f'{vol_real:.1f}%', 'Anualizada (21d)', '#ffd600'), unsafe_allow_html=True)
-ct4.markdown(card_html('SPOT ATUAL', f'${spot:.2f}', ticker, '#ce93d8'), unsafe_allow_html=True)
+ct4.markdown(card_html('SPOT ATUAL', _fmt_strike_win(spot, spot), ticker, '#ce93d8'), unsafe_allow_html=True)
 
 np.random.seed(42)
 dt = 1/252
@@ -386,7 +420,7 @@ add_dual_col(3, sub_w['van'], sub_w['van_v'], 'rgba(0,230,118,0.28)', 'rgba(255,
 fig_w.update_yaxes(tickmode='array', tickvals=sub_w['win_pts'], ticktext=sub_w['y_lbl'], row=1, col=1)
 fig_w.add_hline(y=win_spot, line_dash='dash', line_color='#00e5ff', line_width=2, annotation_text=f'  PRECO ATUAL WIN: {win_spot:,.0f} pts', annotation_position='top left', annotation_font=dict(color='#00e5ff', size=11))
 fig_w.update_layout(barmode='overlay', height=600, paper_bgcolor='#070d12', plot_bgcolor='#0b141c', font_color='#ffffff', showlegend=False, margin=dict(l=15,r=25,t=40,b=15))
-st.plotly_chart(fig_w, width='stretch')
+st.plotly_chart(_ajustar_grafico_venc(fig_w, spot, win_spot), width='stretch')
 
 l1, l2, l3 = st.columns(3)
 l1.markdown('<div style="background:#0c161e;border:1px solid #00e676;border-radius:8px;padding:12px;font-size:12px;line-height:1.45;"><b style="color:#00e676;">▲ DELTA FLOW (DEX) - AÇÃO DO MM</b><br>• <b>Barra Verde (+):</b><br>&nbsp;&nbsp;↗ <i>Preço Subindo:</i> <b>MM vende na alta</b> (Resistencia/Freio).<br>&nbsp;&nbsp;↘ <i>Preço Caindo:</i> <b>MM recompra hedge</b> (Alivia queda).<br>• <b>Barra Laranja (-):</b><br>&nbsp;&nbsp;↗ <i>Preço Subindo:</i> <b>MM encerra vendas</b> (Ajuda repique).<br>&nbsp;&nbsp;↘ <i>Preço Caindo:</i> <b>MM vende mais</b> (Empurra ate suporte).<br><span style="color:#90a4ae;font-size:11px;">Solida = Fluxo do dia | Translucida = OI acumulado</span></div>', unsafe_allow_html=True)
@@ -394,5 +428,7 @@ l2.markdown('<div style="background:#0c161e;border:1px solid #ab47bc;border-radi
 l3.markdown('<div style="background:#0c161e;border:1px solid #ffd600;border-radius:8px;padding:12px;font-size:12px;line-height:1.45;"><b style="color:#ffd600;">⚡ VANNA (dΔ/dIV) - AÇÃO DO MM</b><br>• <b>Verde (+ Vanna Positiva):</b><br>&nbsp;&nbsp;↗ <i>Preço Subindo (IV cai):</i> <b>MM compra o ativo</b> (Sustenta alta).<br>&nbsp;&nbsp;↘ <i>Preço Caindo (IV sobe):</i> <b>MM vende o ativo</b> (Agrava queda).<br>• <b>Vermelho (- Vanna Negativa):</b><br>&nbsp;&nbsp;↗ <i>Preço Subindo (IV cai):</i> <b>MM vende o ativo</b> (Segura alta).<br>&nbsp;&nbsp;↘ <i>Preço Caindo (IV sobe):</i> <b>MM compra o ativo</b> (Estanca queda).<br><span style="color:#90a4ae;font-size:11px;">Crítico em aberturas, noticias e decisoes de juros</span></div>', unsafe_allow_html=True)
 st.markdown('---')
 
+from adrs_monitor import render_adrs_blocos
+render_adrs_blocos(win_spot)
 from geradores import render_geradores
 render_geradores(spot, win_spot, df_sub, cw, pw, vn, dfp, gf)
